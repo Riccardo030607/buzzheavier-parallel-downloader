@@ -1,0 +1,22 @@
+# Copia questo file in "headers.txt" e incolla gli header catturati dal tuo
+# browser (DevTools -> Network -> tasto destro sulla richiesta -> Copy as cURL).
+# Una riga per header: "Nome: Valore". Le righe con '#' sono ignorate.
+# Questi header replicano il browser cosi' che il server accetti la richiesta.
+
+# IMPORTANTE: il cookie di sessione (es. cf_clearance) e' spesso legato a IP +
+# User-Agent. Se cambi IP o User-Agent, ricattura il cURL e reincolla Cookie + link.
+Cookie: PASTE_SESSION_COOKIE_HERE
+
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/0.0.0.0 Safari/537.36
+Referer: https://REPLACE_WITH_LANDING_PAGE_URL
+Accept: */*
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "Windows"
+sec-fetch-dest: empty
+sec-fetch-mode: cors
+sec-fetch-site: same-origin
+
+# Header HTMX: dichiarano al server una richiesta HTMX (come fa il browser su alcuni
+# siti). Se il server risponde con HTML invece del file, prova a rimuoverli.
+hx-current-url: https://REPLACE_WITH_LANDING_PAGE_URL
+hx-request: true

@@ -1,0 +1,4 @@
+# Copia questo file in "url.txt" e incolla sulla PRIMA riga il link di download.
+# Puo' essere l'endpoint iniziale (es. .../download?t=...) oppure il link diretto
+# al file. Il token nel link e' a scadenza: se scade, ricatturalo dal browser.
+PASTE_DOWNLOAD_URL_HERE

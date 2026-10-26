@@ -1,0 +1,17 @@
+# Configurazione reale con dati sensibili (link, token, cookie, proxy)
+url.txt
+headers.txt
+proxies.txt
+
+# File di input generato da aria2c (contiene gli header)
+aria-input.txt
+
+# File scaricati e stato del download
+*.part
+*.part.progress
+*.progress
+*.bin
+
+# Python
+__pycache__/
+*.pyc
