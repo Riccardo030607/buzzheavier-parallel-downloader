@@ -155,3 +155,8 @@ This tool is provided "as is", for personal and lawful use. Downloading copyrigh
 content without the right to do so may break the law; bypassing limits or protections may
 violate the terms of service of the site and of your VPN/proxy provider. Use is the
 responsibility of whoever runs it.
+
+## License
+
+Released under the [MIT License](LICENSE) — free to use, modify and redistribute,
+provided the copyright notice is kept.
