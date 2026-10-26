@@ -1,29 +1,30 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Download manager robusto basato su curl_cffi.
+Robust download manager based on curl_cffi.
 
-Caratteristiche:
-  1) BARRA DI AVANZAMENTO  -> percentuale, byte scaricati/totali, velocita' ed ETA.
-  2) PERSISTENZA           -> scrive su <OutFile>.part; se rilanci lo script
-                              riprende dal punto esatto leggendo i byte gia' su disco.
-  3) AUTO-RETRY + RESUME   -> se la connessione cade riparte da solo e continua
-                              dal byte dove si era interrotto (Range: bytes=pos-).
-  4) MULTI-CONNESSIONE     -> scarica segmenti in parallelo (-n), con una lista di
-                              proxy opzionale (proxies.txt) per far uscire ogni
-                              connessione da un IP diverso.
-  5) FALLBACK              -> ri-risolve il link dalla configurazione, ruota piu'
-                              impronte TLS se il server rifiuta, gestisce 200/206/416/403.
+Features:
+  1) PROGRESS BAR     -> percentage, downloaded/total bytes, speed and ETA.
+  2) PERSISTENCE      -> writes to <OutFile>.part; if you re-run the script it
+                         resumes from the exact point by reading the bytes already
+                         on disk.
+  3) AUTO-RETRY + RESUME -> if the connection drops it restarts on its own and
+                         continues from the byte where it stopped (Range: bytes=pos-).
+  4) MULTI-CONNECTION -> downloads segments in parallel (-n), with an optional list
+                         of proxies (proxies.txt) to route each connection through a
+                         different IP.
+  5) FALLBACK         -> re-resolves the link from the configuration, rotates several
+                         TLS fingerprints if the server rejects it, handles 200/206/416/403.
 
-Configurazione (file nella stessa cartella):
-  - url.txt      : il link di download (endpoint /download?... oppure link diretto).
-  - headers.txt  : gli header catturati dal browser ("Nome: Valore"), incluso Cookie.
-  - proxies.txt  : (opzionale) un proxy per riga per la modalita' multi-connessione.
+Configuration (files in the same folder):
+  - url.txt      : the download link (/download?... endpoint or a direct link).
+  - headers.txt  : the headers captured from the browser ("Name: Value"), including Cookie.
+  - proxies.txt  : (optional) one proxy per line for multi-connection mode.
 
-USO:
-    python download.py -o MioFile.ext
-    python download.py -o MioFile.ext --sha256 <hash>
-    python download.py -o MioFile.ext -n 4
+USAGE:
+    python download.py -o MyFile.ext
+    python download.py -o MyFile.ext --sha256 <hash>
+    python download.py -o MyFile.ext -n 4
 """
 
 import argparse
@@ -45,26 +46,26 @@ URL_FILE = HERE / "url.txt"
 HEADERS_FILE = HERE / "headers.txt"
 PROXIES_FILE = HERE / "proxies.txt"
 
-# Scala di impronte TLS per il fallback: si prova la prima; se il server
-# rifiuta il TLS/403, si passa alla successiva.
+# TLS fingerprint ladder for the fallback: the first one is tried; if the server
+# rejects the TLS/403, it moves on to the next.
 IMPERSONATE_CHAIN = ["chrome", "chrome124", "chrome120", "edge101"]
 
 CHUNK = 1024 * 1024  # 1 MiB
 
 
 # --------------------------------------------------------------------------- #
-# Lettura configurazione
+# Configuration reading
 # --------------------------------------------------------------------------- #
 def read_landing() -> str:
     txt = URL_FILE.read_text(encoding="utf-8").strip()
     if not txt or "PASTE" in txt.upper():
-        raise SystemExit("ERRORE: inserisci il link di download nella prima riga di url.txt")
+        raise SystemExit("ERROR: put the download link on the first line of url.txt")
     return txt.splitlines()[0].strip()
 
 
 def read_headers() -> dict:
-    """Legge headers.txt come dizionario. Una riga per header ('Nome: Valore').
-    Le righe vuote o che iniziano con '#' sono ignorate."""
+    """Reads headers.txt as a dictionary. One line per header ('Name: Value').
+    Empty lines or lines starting with '#' are ignored."""
     headers = {}
     if not HEADERS_FILE.exists():
         return headers
@@ -80,9 +81,9 @@ def read_headers() -> dict:
 
 
 def read_proxies() -> list:
-    """Legge proxies.txt: una riga per connessione del download multiplo.
-    'direct' = nessun proxy (rete/tunnel attuale). Altrimenti host:porta
-    (SOCKS5) oppure un URL completo. Ritorna una lista di (None | 'socks5h://...')."""
+    """Reads proxies.txt: one line per connection of the multi download.
+    'direct' = no proxy (current network/tunnel). Otherwise host:port
+    (SOCKS5) or a full URL. Returns a list of (None | 'socks5h://...')."""
     if not PROXIES_FILE.exists():
         return []
     out = []
@@ -100,18 +101,18 @@ def read_proxies() -> list:
 
 
 def wait_for_fresh_link(poll: int = 5, remind_every: int = 30) -> None:
-    """Se il link/token e' scaduto, l'auto-retry da solo non basta. Aspetta che
-    venga salvato un link fresco in url.txt e poi riprende. I byte gia' scaricati
-    nel .part restano intatti."""
+    """If the link/token has expired, auto-retry alone isn't enough. Wait until a
+    fresh link is saved in url.txt and then resume. The bytes already downloaded
+    into the .part stay intact."""
     try:
         base_mtime = URL_FILE.stat().st_mtime
     except OSError:
         base_mtime = 0
     print("\n" + "=" * 70)
-    print(">>> LINK/TOKEN SCADUTO - serve un intervento manuale.")
-    print(">>> 1) nel browser ricattura la richiesta di download (Copy as cURL)")
-    print(">>> 2) incolla l'URL nella 1a riga di url.txt (e aggiorna il Cookie in headers.txt)")
-    print(">>> 3) salva: il download riprende dal punto esatto, i byte del .part sono salvi.")
+    print(">>> LINK/TOKEN EXPIRED - manual action required.")
+    print(">>> 1) in the browser, recapture the download request (Copy as cURL)")
+    print(">>> 2) paste the URL on the 1st line of url.txt (and update the Cookie in headers.txt)")
+    print(">>> 3) save: the download resumes from the exact point, the .part bytes are safe.")
     print("=" * 70)
     waited = 0
     while True:
@@ -119,21 +120,21 @@ def wait_for_fresh_link(poll: int = 5, remind_every: int = 30) -> None:
         waited += poll
         try:
             if URL_FILE.stat().st_mtime != base_mtime:
-                print(">>> url.txt aggiornato: riprendo il download.\n")
+                print(">>> url.txt updated: resuming the download.\n")
                 return
         except OSError:
             pass
         if waited % remind_every == 0:
-            print(f"    ...in attesa di un link fresco in url.txt ({waited}s)")
+            print(f"    ...waiting for a fresh link in url.txt ({waited}s)")
 
 
 # --------------------------------------------------------------------------- #
-# STEP 1 - risoluzione del link diretto (gestisce hx-redirect / 3xx Location)
+# STEP 1 - resolve the direct link (handles hx-redirect / 3xx Location)
 # --------------------------------------------------------------------------- #
 def resolve_direct_url(landing: str, headers: dict, impersonate: str) -> str:
     hdr = dict(headers)
     hdr.setdefault("Accept", "*/*")
-    # stream=True: non scarica il body (se per sbaglio e' gia' il file, non va in RAM)
+    # stream=True: doesn't download the body (if it's already the file by mistake, it won't hit RAM)
     r = requests.get(landing, headers=hdr, impersonate=impersonate,
                      allow_redirects=False, stream=True, timeout=30)
     real = r.headers.get("hx-redirect") or r.headers.get("location")
@@ -142,34 +143,34 @@ def resolve_direct_url(landing: str, headers: dict, impersonate: str) -> str:
 
     if real:
         r.close()
-        real = urljoin(landing, real)          # normalizza eventuali relativi
+        real = urljoin(landing, real)          # normalize any relative URLs
         pr = urlparse(real)
-        # Un link valido al file sta su un host diverso dalla pagina, o ha /d/ nel path
+        # A valid link to the file is on a different host from the page, or has /d/ in the path
         looks_like_file = ("/d/" in pr.path) or (pr.hostname and pr.hostname != landing_host)
         if not looks_like_file:
             raise RequestException(
-                "TOKEN SCADUTO: il server rimbalza alla pagina "
-                f"({real}) invece di dare il link al file. Aggiorna url.txt "
-                "con un link fresco dal browser (e il Cookie in headers.txt)."
+                "TOKEN EXPIRED: the server bounces back to the page "
+                f"({real}) instead of giving the file link. Update url.txt "
+                "with a fresh link from the browser (and the Cookie in headers.txt)."
             )
         return real
 
-    # Nessun redirect: accetta il landing SOLO se e' davvero un file (non HTML).
+    # No redirect: accept the landing ONLY if it really is a file (not HTML).
     ctype = r.headers.get("Content-Type", "").lower()
     if r.headers.get("Content-Disposition") or ctype.startswith("application/"):
         r.close()
-        return landing  # url.txt contiene gia' il link diretto al file
+        return landing  # url.txt already contains the direct link to the file
     body = r.text[:200]
     r.close()
     raise RequestException(
-        f"Step1: nessun link diretto (status {r.status_code}, "
-        f"Content-Type {ctype!r}). Link scaduto? Aggiorna url.txt. "
-        f"Anteprima: {body!r}"
+        f"Step1: no direct link (status {r.status_code}, "
+        f"Content-Type {ctype!r}). Expired link? Update url.txt. "
+        f"Preview: {body!r}"
     )
 
 
 # --------------------------------------------------------------------------- #
-# Barra di avanzamento
+# Progress bar
 # --------------------------------------------------------------------------- #
 def human(n: float) -> str:
     for unit in ("B", "KB", "MB", "GB", "TB"):
@@ -181,7 +182,7 @@ def human(n: float) -> str:
 
 def draw_bar(done: int, total: int, session_bytes: int, session_start: float) -> None:
     elapsed = max(time.time() - session_start, 1e-6)
-    speed = session_bytes / elapsed  # byte/s della sessione corrente
+    speed = session_bytes / elapsed  # bytes/s of the current session
     if total > 0:
         frac = done / total
         width = 30
@@ -194,21 +195,21 @@ def draw_bar(done: int, total: int, session_bytes: int, session_start: float) ->
                f"{human(done)}/{human(total)}  "
                f"{human(speed)}/s  ETA {eta_str}   ")
     else:
-        msg = f"\r{human(done)} scaricati  {human(speed)}/s   "
+        msg = f"\r{human(done)} downloaded  {human(speed)}/s   "
     sys.stdout.write(msg)
     sys.stdout.flush()
 
 
 # --------------------------------------------------------------------------- #
-# STEP 2 - un singolo tentativo di download con resume (connessione singola)
-# Ritorna True se il file e' completo.
+# STEP 2 - a single download attempt with resume (single connection)
+# Returns True if the file is complete.
 # --------------------------------------------------------------------------- #
 def attempt_download(real_url: str, headers: dict, impersonate: str,
                      part_path: pathlib.Path) -> bool:
     pos = part_path.stat().st_size if part_path.exists() else 0
 
     h2 = dict(headers)
-    h2["Accept-Encoding"] = "identity"   # niente gzip: Content-Length = size reale
+    h2["Accept-Encoding"] = "identity"   # no gzip: Content-Length = real size
     if pos > 0:
         h2["Range"] = f"bytes={pos}-"
 
@@ -216,34 +217,34 @@ def attempt_download(real_url: str, headers: dict, impersonate: str,
                         stream=True, timeout=120)
     status = resp.status_code
 
-    # File gia' completo (il server dice: range non soddisfacibile)
+    # File already complete (the server says: range not satisfiable)
     if status == 416:
         resp.close()
-        print(f"\n[info] Il server risponde 416: il .part ({human(pos)}) risulta gia' completo.")
+        print(f"\n[info] The server responds 416: the .part ({human(pos)}) is already complete.")
         return True
 
     if status == 403:
         resp.close()
-        raise RequestException("403 Forbidden: impronta/cookie rifiutati (provo fallback).")
+        raise RequestException("403 Forbidden: fingerprint/cookie rejected (trying fallback).")
 
     if status not in (200, 206):
         body = resp.text[:200]
         resp.close()
-        raise RequestException(f"status inatteso {status}. Body: {body!r}")
+        raise RequestException(f"unexpected status {status}. Body: {body!r}")
 
-    # Se arriva una pagina HTML non e' il file -> non salvare contenuto errato.
+    # If an HTML page arrives it's not the file -> don't save wrong content.
     ctype = resp.headers.get("Content-Type", "").lower()
     if "text/html" in ctype or "text/plain" in ctype:
         body = resp.text[:200]
         resp.close()
         raise RequestException(
-            f"Risposta HTML/testo (Content-Type {ctype!r}), NON il file. "
-            f"Link scaduto? Aggiorna url.txt. Anteprima: {body!r}"
+            f"HTML/text response (Content-Type {ctype!r}), NOT the file. "
+            f"Expired link? Update url.txt. Preview: {body!r}"
         )
 
-    # Determina la dimensione totale
+    # Determine the total size
     total = 0
-    cr = resp.headers.get("Content-Range")  # es: "bytes 1000-69999/70000"
+    cr = resp.headers.get("Content-Range")  # e.g.: "bytes 1000-69999/70000"
     if cr and "/" in cr:
         try:
             total = int(cr.split("/")[-1])
@@ -252,9 +253,9 @@ def attempt_download(real_url: str, headers: dict, impersonate: str,
     elif resp.headers.get("Content-Length"):
         total = int(resp.headers["Content-Length"]) + (pos if status == 206 else 0)
 
-    # Il server ha IGNORATO il Range (200 invece di 206): riparti da zero.
+    # The server IGNORED the Range (200 instead of 206): restart from zero.
     if pos > 0 and status == 200:
-        print(f"\n[warn] Il server ha ignorato il resume (200): riparto da 0.")
+        print(f"\n[warn] The server ignored the resume (200): restarting from 0.")
         pos = 0
         mode = "wb"
     else:
@@ -281,15 +282,15 @@ def attempt_download(real_url: str, headers: dict, impersonate: str,
     print()
 
     if total and done < total:
-        raise RequestException(f"stream interrotto: {human(done)}/{human(total)}")
+        raise RequestException(f"stream interrupted: {human(done)}/{human(total)}")
     return True
 
 
 # --------------------------------------------------------------------------- #
-# MODALITA' MULTI-CONNESSIONE (segmenti paralleli con range)
+# MULTI-CONNECTION MODE (parallel segments with range)
 # --------------------------------------------------------------------------- #
 def get_total_size(real: str, headers: dict, impersonate: str) -> int:
-    """Chiede 1 byte (Range 0-0) per leggere la dimensione totale dal Content-Range."""
+    """Requests 1 byte (Range 0-0) to read the total size from the Content-Range."""
     h = dict(headers)
     h["Accept-Encoding"] = "identity"
     h["Range"] = "bytes=0-0"
@@ -307,9 +308,9 @@ def get_total_size(real: str, headers: dict, impersonate: str) -> int:
     ct = r.headers.get("Content-Type", "").lower()
     r.close()
     if st == 403 or "text/html" in ct:
-        raise RequestException("403/HTML sul sizing: link o impronta non validi.")
+        raise RequestException("403/HTML on sizing: invalid link or fingerprint.")
     if not total:
-        raise RequestException(f"impossibile leggere la dimensione totale (status {st}).")
+        raise RequestException(f"unable to read the total size (status {st}).")
     return total
 
 
@@ -325,7 +326,7 @@ def save_segments(progress_path: pathlib.Path, total: int, segments: list) -> No
 
 def load_or_init_segments(part_path: pathlib.Path, total: int, n: int,
                           progress_path: pathlib.Path) -> list:
-    # Riprende lo stato salvato se coerente con la dimensione totale.
+    # Resume the saved state if consistent with the total size.
     if progress_path.exists():
         try:
             data = json.loads(progress_path.read_text(encoding="utf-8"))
@@ -333,8 +334,8 @@ def load_or_init_segments(part_path: pathlib.Path, total: int, n: int,
                 return data["segments"]
         except Exception:
             pass
-    # Altrimenti crea i segmenti. Un eventuale .part contiguo gia' esistente
-    # (dalla modalita' a 1 connessione) diventa il 1o segmento gia' COMPLETO.
+    # Otherwise create the segments. Any existing contiguous .part
+    # (from single-connection mode) becomes the 1st segment, already COMPLETE.
     existing = part_path.stat().st_size if part_path.exists() else 0
     existing = min(existing, total)
     segs = []
@@ -352,10 +353,10 @@ def load_or_init_segments(part_path: pathlib.Path, total: int, n: int,
 
 
 def resplit_segments(segments: list, desired: int) -> list:
-    """Se i segmenti INCOMPIUTI sono meno di 'desired', spezza i tronconi con piu'
-    byte residui finche' non se ne hanno 'desired' (o non sono piu' divisibili).
-    Preserva il progresso: la parte gia' scaricata di ogni segmento resta valida."""
-    MIN_SPLIT = 8 * CHUNK  # non spezzare pezzi piccoli (overhead inutile)
+    """If the INCOMPLETE segments are fewer than 'desired', split the chunks with the
+    most bytes remaining until there are 'desired' of them (or they can't be split
+    anymore). Preserves progress: the already-downloaded part of each segment stays valid."""
+    MIN_SPLIT = 8 * CHUNK  # don't split small pieces (pointless overhead)
     segs = [dict(s) for s in segments]
 
     def incomplete():
@@ -385,15 +386,15 @@ def done_bytes(segments: list) -> int:
 
 
 def contiguous_done(segments: list) -> int:
-    """Byte scaricati in modo CONTIGUO dall'inizio (senza buchi). Serve per
-    convertire in sicurezza una sessione multi in una a connessione singola."""
+    """Bytes downloaded CONTIGUOUSLY from the start (no gaps). Needed to safely
+    convert a multi session into a single-connection one."""
     c = 0
     for s in sorted(segments, key=lambda x: x["start"]):
         if s["start"] != c:
-            break               # c'e' un buco: mi fermo al prefisso contiguo
+            break               # there's a gap: stop at the contiguous prefix
         c = s["cur"]
         if s["cur"] <= s["end"]:
-            break               # segmento non finito: il contiguo arriva fin qui
+            break               # unfinished segment: the contiguous part ends here
     return c
 
 
@@ -406,8 +407,8 @@ def progress_done_bytes(progress_path: pathlib.Path) -> int:
 
 
 def normalize_from_multi(part_path: pathlib.Path, progress_path: pathlib.Path) -> int:
-    """Se esiste una sessione multi (.progress), riduce il .part pre-allocato ai
-    byte contigui reali, cosi' la modalita' a 1 connessione riprende corretta."""
+    """If a multi session exists (.progress), shrink the pre-allocated .part to the
+    real contiguous bytes, so single-connection mode resumes correctly."""
     try:
         data = json.loads(progress_path.read_text(encoding="utf-8"))
         c = contiguous_done(data["segments"])
@@ -433,9 +434,9 @@ def seg_worker(seg, real, headers, impersonate, fh, fh_lock, prog_lock,
         req_kwargs["proxies"] = {"http": proxy_url, "https": proxy_url}
 
     def maybe_draw():
-        # Disegna la barra aggregata al massimo ~4 volte al secondo, da qualunque
-        # worker: essendo chiamata dopo la scrittura di un blocco, viene eseguita
-        # di sicuro (il thread tiene il GIL in quel momento).
+        # Draw the aggregate bar at most ~4 times per second, from any worker:
+        # being called after writing a block, it's guaranteed to run (the thread
+        # holds the GIL at that moment).
         now = time.time()
         with draw_lock:
             if now - draw_state["last"] >= 0.25:
@@ -458,7 +459,7 @@ def seg_worker(seg, real, headers, impersonate, fh, fh_lock, prog_lock,
                 resp.close(); result["status"] = "forbidden"; result["msg"] = "403"; return
             if st == 200 and pos > seg["start"]:
                 resp.close(); result["status"] = "norange"
-                result["msg"] = "il server ignora Range (usa -n 1)"; return
+                result["msg"] = "the server ignores Range (use -n 1)"; return
             if st not in (200, 206):
                 body = resp.text[:120]; resp.close()
                 result["status"] = "http"; result["msg"] = f"{st} {body!r}"; return
@@ -502,59 +503,59 @@ def download_multi(part_path: pathlib.Path, out_path: pathlib.Path,
     segments = None
     prealloc = False
 
-    print(f"=== Modalita' multi-connessione: {n} connessioni parallele ===\n")
+    print(f"=== Multi-connection mode: {n} parallel connections ===\n")
 
     while True:
         headers = read_headers()
         impersonate = IMPERSONATE_CHAIN[imp_idx % len(IMPERSONATE_CHAIN)]
 
-        # --- risoluzione link + dimensione totale ---
+        # --- resolve link + total size ---
         try:
             if real is None:
                 landing = read_landing()
                 real = resolve_direct_url(landing, headers, impersonate)
-                print(f"link diretto risolto: {real[:80]}...")
+                print(f"direct link resolved: {real[:80]}...")
             if total is None:
                 total = get_total_size(real, headers, impersonate)
-                print(f"dimensione totale: {human(total)}")
+                print(f"total size: {human(total)}")
         except KeyboardInterrupt:
-            print("\nInterrotto. .part e .progress salvi: rilancia per riprendere.")
+            print("\nInterrupted. .part and .progress saved: re-run to resume.")
             return
         except RequestException as e:
             msg = str(e)
-            print(f"\n[errore] {msg}")
-            if ("TOKEN SCADUTO" in msg or "HTML" in msg or "nessun link diretto" in msg):
+            print(f"\n[error] {msg}")
+            if ("TOKEN EXPIRED" in msg or "HTML" in msg or "no direct link" in msg):
                 wait_for_fresh_link(); real = None; continue
             real = None; imp_idx += 1
             time.sleep(min(retry_wait, 30)); continue
         except Exception as e:
-            print(f"\n[errore rete] {type(e).__name__}: {e}")
+            print(f"\n[network error] {type(e).__name__}: {e}")
             time.sleep(min(retry_wait, 30)); continue
 
-        # --- init segmenti + preallocazione del file (una volta sola) ---
+        # --- init segments + file pre-allocation (only once) ---
         if segments is None:
             segments = load_or_init_segments(part_path, total, n, progress_path)
-            # ri-suddivide se servono piu' connessioni dei segmenti incompiuti
+            # re-split if more connections than incomplete segments are needed
             desired = max(n, len(read_proxies()))
             before = len([s for s in segments if s["cur"] <= s["end"]])
             segments = resplit_segments(segments, desired)
             after = len([s for s in segments if s["cur"] <= s["end"]])
             if after != before:
-                print(f"ri-suddivisione: da {before} a {after} segmenti incompiuti")
+                print(f"re-split: from {before} to {after} incomplete segments")
                 with prog_lock:
                     save_segments(progress_path, total, segments)
-            print(f"segmenti: {after} da scaricare "
-                  f"su {len(segments)} totali; gia' su disco {human(done_bytes(segments))}")
+            print(f"segments: {after} to download "
+                  f"out of {len(segments)} total; already on disk {human(done_bytes(segments))}")
         if not prealloc:
             if not part_path.exists():
                 part_path.touch()
             with open(part_path, "r+b") as _f:
-                _f.truncate(total)   # estende preservando i dati gia' presenti
+                _f.truncate(total)   # extends while preserving data already present
             prealloc = True
         if segments_done(segments):
             break
 
-        # --- scarico i segmenti incompleti in parallelo ---
+        # --- download the incomplete segments in parallel ---
         fh = open(part_path, "r+b")
         stop_event = threading.Event()
         draw_lock = threading.Lock()
@@ -563,15 +564,15 @@ def download_multi(part_path: pathlib.Path, out_path: pathlib.Path,
         draw_state = {"last": 0.0, "start_time": start_time, "start_done": start_done}
 
         active = [s for s in segments if s["cur"] <= s["end"]]
-        proxies_list = read_proxies()   # una riga per connessione (vedi proxies.txt)
-        print(f"avvio {len(active)} connessioni parallele"
-              + (f" su {len(proxies_list)} proxy" if proxies_list else " (connessione diretta)") + "...")
+        proxies_list = read_proxies()   # one line per connection (see proxies.txt)
+        print(f"starting {len(active)} parallel connections"
+              + (f" over {len(proxies_list)} proxies" if proxies_list else " (direct connection)") + "...")
 
         threads, results = [], []
         for i, seg in enumerate(active):
             proxy_url = proxies_list[i % len(proxies_list)] if proxies_list else None
-            print(f"  segmento @{human(seg['start'])}  ->  "
-                  f"{'connessione diretta' if not proxy_url else proxy_url}")
+            print(f"  segment @{human(seg['start'])}  ->  "
+                  f"{'direct connection' if not proxy_url else proxy_url}")
             res = {"status": "?", "msg": ""}
             results.append(res)
             t = threading.Thread(
@@ -583,7 +584,7 @@ def download_multi(part_path: pathlib.Path, out_path: pathlib.Path,
             t.start()
             threads.append(t)
 
-        draw_bar(start_done, total, 0, start_time)  # barra iniziale subito
+        draw_bar(start_done, total, 0, start_time)  # initial bar right away
 
         try:
             for t in threads:
@@ -593,7 +594,7 @@ def download_multi(part_path: pathlib.Path, out_path: pathlib.Path,
             with prog_lock:
                 save_segments(progress_path, total, segments)
             fh.close()
-            print("\nInterrotto: progresso salvato, rilancia per riprendere.")
+            print("\nInterrupted: progress saved, re-run to resume.")
             return
 
         fh.close()
@@ -607,16 +608,16 @@ def download_multi(part_path: pathlib.Path, out_path: pathlib.Path,
 
         bad = [r for r in results if r["status"] in ("forbidden", "norange", "http")]
         if bad:
-            print(f"-> link/impronta non piu' validi ({bad[0]['status']}: "
-                  f"{bad[0]['msg']}). Ri-risolvo.")
+            print(f"-> link/fingerprint no longer valid ({bad[0]['status']}: "
+                  f"{bad[0]['msg']}). Re-resolving.")
             real = None
             imp_idx += 1
         else:
             wait = min(retry_wait, 30)
-            print(f"-> alcuni segmenti interrotti (rete). Riprendo tra {wait}s.")
+            print(f"-> some segments interrupted (network). Resuming in {wait}s.")
             time.sleep(wait)
 
-    # --- finalizzazione ---
+    # --- finalization ---
     with open(part_path, "r+b") as f:
         f.truncate(total)
     try:
@@ -624,22 +625,22 @@ def download_multi(part_path: pathlib.Path, out_path: pathlib.Path,
     except OSError:
         pass
     part_path.replace(out_path)
-    print(f"\nDownload COMPLETATO: {out_path.name} ({human(out_path.stat().st_size)})")
+    print(f"\nDownload COMPLETE: {out_path.name} ({human(out_path.stat().st_size)})")
 
 
 # --------------------------------------------------------------------------- #
-# Loop principale con AUTO-RETRY e FALLBACK
+# Main loop with AUTO-RETRY and FALLBACK
 # --------------------------------------------------------------------------- #
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("-o", "--out", default="download.bin", help="nome file di output")
-    ap.add_argument("--sha256", default="", help="hash atteso per verifica finale")
+    ap.add_argument("-o", "--out", default="download.bin", help="output file name")
+    ap.add_argument("--sha256", default="", help="expected hash for final verification")
     ap.add_argument("--max-retries", type=int, default=0,
-                    help="numero massimo di tentativi (0 = infiniti)")
+                    help="maximum number of attempts (0 = infinite)")
     ap.add_argument("--retry-wait", type=int, default=10,
-                    help="attesa base tra i tentativi (secondi)")
+                    help="base wait between attempts (seconds)")
     ap.add_argument("-n", "--connections", type=int, default=1,
-                    help="connessioni parallele (1 = singola)")
+                    help="parallel connections (1 = single)")
     args = ap.parse_args()
 
     out_path = HERE / args.out
@@ -647,10 +648,10 @@ def main() -> int:
     progress_path = _progress_path(part_path)
 
     if out_path.exists():
-        print(f"'{args.out}' esiste gia'. Nulla da fare.")
+        print(f"'{args.out}' already exists. Nothing to do.")
         return 0
 
-    # byte realmente scaricati (dal .progress se multi, altrimenti dimensione .part)
+    # bytes actually downloaded (from .progress if multi, otherwise .part size)
     if progress_path.exists():
         resume_bytes = progress_done_bytes(progress_path)
     elif part_path.exists():
@@ -660,100 +661,100 @@ def main() -> int:
 
     print("=== Download manager (curl_cffi) ===")
     print(f"Output : {out_path}")
-    print(f"Parziale: {part_path.name}"
-          + (f"  (gia' {human(resume_bytes)} scaricati, riprendo)"
+    print(f"Partial: {part_path.name}"
+          + (f"  (already {human(resume_bytes)} downloaded, resuming)"
              if resume_bytes else ""))
     print()
 
-    # --- MODALITA' MULTI-CONNESSIONE ---
+    # --- MULTI-CONNECTION MODE ---
     if args.connections and args.connections > 1:
         download_multi(part_path, out_path, args.connections, args.retry_wait)
         return _verify_hash(out_path, args.sha256)
 
-    # --- MODALITA' SINGOLA: se vengo da una sessione multi, normalizzo il .part ---
+    # --- SINGLE MODE: if coming from a multi session, normalize the .part ---
     if progress_path.exists():
         c = normalize_from_multi(part_path, progress_path)
-        print(f"(sessione multi precedente rilevata: .part normalizzato a "
-              f"{human(c)}, riprendo a 1 connessione)\n")
+        print(f"(previous multi session detected: .part normalized to "
+              f"{human(c)}, resuming with 1 connection)\n")
 
     attempt = 0
     imp_idx = 0
-    real = None          # ultimo link diretto risolto: riusato per il resume
-    consec_fail = 0      # fallimenti consecutivi (per il backoff)
+    real = None          # last resolved direct link: reused for resume
+    consec_fail = 0      # consecutive failures (for backoff)
 
     while True:
         attempt += 1
         if args.max_retries and attempt > args.max_retries:
-            print(f"\nRaggiunto il limite di {args.max_retries} tentativi. Mi fermo.")
+            print(f"\nReached the limit of {args.max_retries} attempts. Stopping.")
             return 1
 
-        headers = read_headers()  # riletto ogni volta: cookie fresco se aggiorni headers.txt
+        headers = read_headers()  # re-read every time: fresh cookie if you update headers.txt
         impersonate = IMPERSONATE_CHAIN[imp_idx % len(IMPERSONATE_CHAIN)]
-        print(f"----- Tentativo #{attempt}  (impronta: {impersonate}) -----")
+        print(f"----- Attempt #{attempt}  (fingerprint: {impersonate}) -----")
 
         try:
             if real is None:
-                landing = read_landing()       # riletto ogni volta: link/token fresco
+                landing = read_landing()       # re-read every time: fresh link/token
                 real = resolve_direct_url(landing, headers, impersonate)
-                print(f"link diretto risolto: {real[:80]}...")
+                print(f"direct link resolved: {real[:80]}...")
             if attempt_download(real, headers, impersonate, part_path):
                 break
             consec_fail = 0
         except KeyboardInterrupt:
-            print("\nInterrotto dall'utente. Il .part resta su disco: rilancia per riprendere.")
+            print("\nInterrupted by user. The .part stays on disk: re-run to resume.")
             return 130
         except RequestException as e:
             msg = str(e)
-            print(f"\n[errore] {msg}")
-            # Link/token morto: l'auto-retry da solo NON basta -> aspetto un link fresco.
-            if ("TOKEN SCADUTO" in msg or "HTML" in msg
-                    or "nessun link diretto" in msg):
+            print(f"\n[error] {msg}")
+            # Dead link/token: auto-retry alone is NOT enough -> wait for a fresh link.
+            if ("TOKEN EXPIRED" in msg or "HTML" in msg
+                    or "no direct link" in msg):
                 wait_for_fresh_link()
-                real = None                    # forza ri-risoluzione col link nuovo
+                real = None                    # force re-resolution with the new link
                 consec_fail = 0
-                continue                       # niente attesa extra: riparti subito
-            # 403 o TLS: il link potrebbe essere scaduto o l'impronta rifiutata.
-            real = None                        # scarta il link vecchio, ri-risolvo
+                continue                       # no extra wait: resume right away
+            # 403 or TLS: the link may have expired or the fingerprint was rejected.
+            real = None                        # discard the old link, re-resolve
             if "403" in msg or "TLS" in msg or "SSL" in msg or "curl: (35)" in msg:
                 imp_idx += 1
-                print(f"-> ruoto impronta TLS a: {IMPERSONATE_CHAIN[imp_idx % len(IMPERSONATE_CHAIN)]}")
+                print(f"-> rotating TLS fingerprint to: {IMPERSONATE_CHAIN[imp_idx % len(IMPERSONATE_CHAIN)]}")
             consec_fail += 1
-        except Exception as e:  # rete/timeout/reset: riprendo sullo STESSO link
-            print(f"\n[errore rete] {type(e).__name__}: {e}")
+        except Exception as e:  # network/timeout/reset: resume on the SAME link
+            print(f"\n[network error] {type(e).__name__}: {e}")
             consec_fail += 1
-            # 'real' resta impostato: il link diretto di solito regge ancora il resume.
-            # Se al giro dopo dara' 403, verra' azzerato e ri-risolto automaticamente.
+            # 'real' stays set: the direct link usually still supports the resume.
+            # If it returns 403 next round, it'll be reset and re-resolved automatically.
 
         wait = min(args.retry_wait * consec_fail, 120)
-        print(f"Riprovo tra {wait}s (i byte gia' scaricati NON si perdono).\n")
+        print(f"Retrying in {wait}s (the bytes already downloaded are NOT lost).\n")
         time.sleep(wait)
 
-    # ---- Finalizzazione: rinomino .part -> file definitivo ----
+    # ---- Finalization: rename .part -> final file ----
     part_path.replace(out_path)
     size = out_path.stat().st_size
-    print(f"\nDownload COMPLETATO: {out_path.name} ({human(size)})")
+    print(f"\nDownload COMPLETE: {out_path.name} ({human(size)})")
 
     return _verify_hash(out_path, args.sha256)
 
 
 def _verify_hash(out_path: pathlib.Path, expected: str) -> int:
-    """Verifica SHA256 opzionale. Ritorna il codice di uscita del programma."""
+    """Optional SHA256 verification. Returns the program's exit code."""
     if not out_path.exists():
-        return 0  # download non completato (interrotto o in attesa): niente da verificare
+        return 0  # download not completed (interrupted or waiting): nothing to verify
     if not expected:
         return 0
-    print("Calcolo SHA256 (puo' richiedere qualche minuto su file grandi)...")
+    print("Computing SHA256 (may take a few minutes on large files)...")
     h = hashlib.sha256()
     with open(out_path, "rb") as f:
         for blk in iter(lambda: f.read(8 * 1024 * 1024), b""):
             h.update(blk)
     digest = h.hexdigest()
-    print(f"Calcolato: {digest}")
-    print(f"Atteso   : {expected.strip()}")
+    print(f"Computed: {digest}")
+    print(f"Expected: {expected.strip()}")
     if digest.lower() == expected.strip().lower():
-        print("HASH OK: file integro.")
+        print("HASH OK: file intact.")
         return 0
-    print("HASH DIVERSO: file corrotto o incompleto!")
+    print("HASH MISMATCH: file corrupted or incomplete!")
     return 1
 
 

@@ -1,91 +1,91 @@
 # buzzheavier-parallel-downloader
 
-Downloader **parallelo e resiliente per Buzzheavier** e i suoi mirror
-(`bzzhr.to`, `bzzhr.co`, `buzzheavier.com`, `fuckingfast.net`, ...): download
-multi-connessione con **resume**, auto-retry e aggiramento del **throttling per-IP**.
+**Parallel, resilient downloader for Buzzheavier** and its mirrors
+(`bzzhr.to`, `bzzhr.co`, `buzzheavier.com`, `fuckingfast.net`, ...): multi-connection
+downloads with **resume**, auto-retry and **per-IP throttling** bypass.
 
-Pensato per i file host dietro Cloudflare che usano **token a scadenza**,
-**controllo dell'impronta TLS** e **limite di velocità per-IP**. A differenza dei
-downloader classici, il problema qui non è "scaricare un file" ma *riuscirci*:
-superare il controllo anti-bot, riprendere dopo i reset, e battere il limite che il
-server impone a ogni singolo IP.
+Built for file hosts behind Cloudflare that use **expiring tokens**,
+**TLS fingerprint checks** and a **per-IP speed limit**. Unlike regular downloaders,
+the hard part here isn't "downloading a file" but *managing to*: getting past the
+anti-bot check, resuming after resets, and beating the limit the server enforces on
+every single IP.
 
-## Caratteristiche
+## Features
 
-- **Impronta TLS di un browser** (via [`curl_cffi`](https://github.com/lexiforest/curl_cffi)): supera i controlli anti-bot che bloccano i client "non-browser".
-- **Resume persistente**: scrive su `<file>.part` e, se interrotto, riparte dal byte esatto.
-- **Auto-retry**: sui cali di rete riprende da solo; quando il link scade, si mette in pausa e riparte appena ne fornisci uno fresco (senza perdere i byte già scaricati).
-- **Multi-connessione** (`-n`): scarica più segmenti del file in parallelo.
-- **Multi-IP opzionale**: facendo uscire ogni connessione da un IP diverso (lista di proxy in `proxies.txt`) si può aggirare il throttling che molti host applicano *per-IP*.
-- **Verifica integrità**: controllo opzionale dello SHA-256 a fine download.
+- **Browser TLS fingerprint** (via [`curl_cffi`](https://github.com/lexiforest/curl_cffi)): gets past anti-bot checks that block "non-browser" clients.
+- **Persistent resume**: writes to `<file>.part` and, if interrupted, restarts from the exact byte.
+- **Auto-retry**: recovers on its own after network drops; when the link expires it pauses and resumes as soon as you supply a fresh one (without losing the bytes already downloaded).
+- **Multi-connection** (`-n`): downloads several segments of the file in parallel.
+- **Optional multi-IP**: by routing each connection through a different IP (list of proxies in `proxies.txt`) you can bypass the throttling that many hosts apply *per-IP*.
+- **Integrity check**: optional SHA-256 verification once the download finishes.
 
-## Requisiti
+## Requirements
 
 - Python 3.9+
 - `pip install curl_cffi`
-- (opzionale) [`aria2c`](https://aria2.github.io/) se vuoi usare la variante `download.ps1`
+- (optional) [`aria2c`](https://aria2.github.io/) if you want to use the `download.ps1` variant
 
-## Configurazione
+## Configuration
 
-Il programma legge tre file (template inclusi come `*.example.txt`):
+The program reads three files (templates are included as `*.example.txt`):
 
 ```bash
 copy url.example.txt url.txt
 copy headers.example.txt headers.txt
-copy proxies.example.txt proxies.txt   # solo per la modalità multi-IP
+copy proxies.example.txt proxies.txt   # only for multi-IP mode
 ```
 
-### Come ottenere il link e gli header (cURL)
+### How to get the link and headers (cURL)
 
-1. Apri il sito nel browser e vai fino alla pagina di download del file.
-2. Apri gli strumenti per sviluppatori (**F12**) → scheda **Network**.
-3. Avvia il download (o clicca il pulsante di download).
-4. Nella lista delle richieste trovane quella del download, **tasto destro → Copy → Copy as cURL**.
+1. Open the site in your browser and navigate to the file's download page.
+2. Open the developer tools (**F12**) → **Network** tab.
+3. Start the download (or click the download button).
+4. In the request list, find the download request, **right-click → Copy → Copy as cURL**.
 
-Dal comando `curl` copiato, riempi i file così:
+From the copied `curl` command, fill the files like this:
 
-- **`url.txt`** → l'URL del comando (quello dopo `--url '...'` o subito dopo `curl '...'`), sulla **prima riga**.
-- **`headers.txt`** → ogni header `-H 'Nome: Valore'` diventa una riga `Nome: Valore`.
-- Il **cookie** (`-b '...'` oppure `-H 'cookie: ...'`) va messo come riga `Cookie: ...` dentro `headers.txt`.
+- **`url.txt`** → the command's URL (the one after `--url '...'` or right after `curl '...'`), on the **first line**.
+- **`headers.txt`** → every `-H 'Name: Value'` header becomes a `Name: Value` line.
+- The **cookie** (`-b '...'` or `-H 'cookie: ...'`) goes as a `Cookie: ...` line inside `headers.txt`.
 
-> **I token scadono in fretta.** Il link di download contiene un token temporaneo e il
-> cookie di sessione (es. `cf_clearance`) è legato a IP + User-Agent. Se vedi un errore
-> `TOKEN SCADUTO` o `403`, ricattura il cURL dal browser e reincolla URL + Cookie.
+> **Tokens expire fast.** The download link carries a temporary token and the session
+> cookie (e.g. `cf_clearance`) is bound to IP + User-Agent. If you see a `TOKEN EXPIRED`
+> or `403` error, recapture the cURL from the browser and paste the URL + Cookie again.
 
-## Uso
+## Usage
 
-Verifica rapida che impronta e header siano accettati (scarica i primi 64 KB):
+Quick check that the fingerprint and headers are accepted (downloads the first 64 KB):
 
 ```bash
 python probe.py
 ```
 
-Download a connessione singola:
+Single-connection download:
 
 ```bash
-python download.py -o "NomeFile.ext"
+python download.py -o "FileName.ext"
 ```
 
-Con verifica dell'hash (se il sito lo fornisce):
+With hash verification (if the site provides one):
 
 ```bash
-python download.py -o "NomeFile.ext" --sha256 <hash>
+python download.py -o "FileName.ext" --sha256 <hash>
 ```
 
-Il download riprende sempre da dove si era interrotto: puoi chiudere e rilanciare lo
-stesso comando quando vuoi. Se durante un'assenza scade il link, il programma resta in
-attesa; appena aggiorni `url.txt` con un link fresco, riprende da solo.
+The download always resumes from where it stopped: you can close and re-run the same
+command whenever you want. If the link expires while you're away, the program waits; as
+soon as you update `url.txt` with a fresh link, it resumes on its own.
 
-### Modalità multi-connessione / multi-IP
+### Multi-connection / multi-IP mode
 
 ```bash
-python download.py -o "NomeFile.ext" -n 4
+python download.py -o "FileName.ext" -n 4
 ```
 
-Con `-n` il file viene diviso in segmenti scaricati in parallelo. Da solo, questo **non**
-aiuta se il server limita la velocità *per-IP* (le connessioni condividono lo stesso IP).
-Per superare quel limite serve far uscire ogni connessione da un IP diverso, elencando
-dei proxy in `proxies.txt` (una riga per connessione):
+With `-n` the file is split into segments downloaded in parallel. On its own, this does
+**not** help if the server limits speed *per-IP* (the connections share the same IP).
+To beat that limit you need to route each connection through a different IP, by listing
+proxies in `proxies.txt` (one line per connection):
 
 ```
 direct
@@ -93,65 +93,65 @@ socks5h://proxy-a.example.net:1080
 socks5h://proxy-b.example.net:1080
 ```
 
-Prima di impostare il multi-IP, conviene verificare se l'host accetta il download da un
-IP diverso (alcuni legano il link all'IP che lo ha generato):
+Before setting up multi-IP, it's worth checking whether the host accepts the download
+from a different IP (some bind the link to the IP that generated it):
 
 ```bash
 python proxytest.py socks5h://proxy-a.example.net:1080
 ```
 
-Se il verdetto è "FUNZIONA da IP diverso", il multi-IP è utile.
+If the verdict is "WORKS from a different IP", multi-IP is useful.
 
-### Nota sui servizi VPN/proxy
+### A note on VPN/proxy services
 
-Questo progetto è stato sviluppato e testato usando **Mullvad** e i suoi proxy SOCKS5
-multihop (ogni relay = un IP di uscita diverso). Il codice però accetta **qualsiasi**
-proxy SOCKS5 o HTTP: basta inserirlo in `proxies.txt`.
+This project was developed and tested using **Mullvad** and its multihop SOCKS5 proxies
+(each relay = a different exit IP). The code, however, accepts **any** SOCKS5 or HTTP
+proxy: just add it to `proxies.txt`.
 
-Se usi un altro servizio VPN/proxy e ti serve un'integrazione specifica (o qualunque
-altra funzione), apri una *issue*: sono disponibile ad aggiornare il progetto. E
-ovviamente **ogni contributo è benvenuto** — vedi la sezione [Contribuire](#contribuire).
+If you use a different VPN/proxy service and need specific integration (or any other
+feature), open an *issue*: I'm happy to update the project. And of course **any
+contribution is welcome** — see the [Contributing](#contributing) section.
 
-## Risoluzione problemi
+## Troubleshooting
 
-| Messaggio | Significato | Cosa fare |
+| Message | Meaning | What to do |
 |---|---|---|
-| `TOKEN SCADUTO` / `Risposta HTML` | Il link/token è scaduto | Ricattura il cURL, aggiorna `url.txt` e il `Cookie` in `headers.txt` |
-| `403 Forbidden` | Impronta o cookie rifiutati | Aggiorna il Cookie; il programma ruota anche automaticamente l'impronta TLS |
-| `norange ... usa -n 1` | Il server rifiuta le richieste parziali multiple | Usa `-n 1` (il `.part` resta valido) |
-| Velocità ferma anche con più connessioni | Throttling per-IP o limite della tua linea | Usa `proxies.txt` con IP diversi, o accetta il limite della linea |
+| `TOKEN EXPIRED` / `HTML response` | The link/token has expired | Recapture the cURL, update `url.txt` and the `Cookie` in `headers.txt` |
+| `403 Forbidden` | Fingerprint or cookie rejected | Update the Cookie; the program also rotates the TLS fingerprint automatically |
+| `norange ... use -n 1` | The server refuses multiple partial requests | Use `-n 1` (the `.part` stays valid) |
+| Speed stuck even with more connections | Per-IP throttling or your line's limit | Use `proxies.txt` with different IPs, or accept the line limit |
 
-## Struttura dei file
+## File layout
 
-- `download.py` — il downloader principale (single + multi-connessione, resume, retry).
-- `probe.py` — diagnostica rapida dell'accesso al file.
-- `proxytest.py` — verifica se il download funziona da un IP diverso.
-- `download.ps1` — variante basata su `aria2c` (NB: non emula l'impronta TLS).
-- `*.example.txt` — template di configurazione da copiare.
+- `download.py` — the main downloader (single + multi-connection, resume, retry).
+- `probe.py` — quick diagnostic of file access.
+- `proxytest.py` — checks whether the download works from a different IP.
+- `download.ps1` — `aria2c`-based variant (note: it does **not** emulate the TLS fingerprint).
+- `*.example.txt` — configuration templates to copy.
 
-## Nota sullo sviluppo
+## A note on development
 
-Parte di questo progetto (codice e documentazione) è stata realizzata con l'assistenza
-di strumenti di intelligenza artificiale, con revisione e test manuali.
+Part of this project (code and documentation) was built with the help of AI tools, with
+manual review and testing.
 
-## Contribuire
+## Contributing
 
-Chiunque può proporre modifiche o segnalazioni, anche senza permessi speciali:
+Anyone can propose changes or report issues, even without special permissions:
 
-- **Issue** — per segnalare un bug, chiedere una funzione o fare una domanda. È un
-  messaggio pubblico sulla pagina del progetto; non modifica il codice.
-- **Pull Request (PR)** — per proporre una modifica concreta al codice. Chi contribuisce
-  fa una propria copia del progetto (*fork*), applica le modifiche e apre una PR: io la
-  rivedo e, se va bene, la unisco (*merge*). Nulla viene cambiato finché non approvo.
-- **Fork** — una copia personale e indipendente del progetto, che ognuno può modificare
-  liberamente per conto proprio.
+- **Issue** — to report a bug, request a feature or ask a question. It's a public message
+  on the project page; it does not change the code.
+- **Pull Request (PR)** — to propose a concrete change to the code. A contributor makes
+  their own copy of the project (*fork*), applies the changes and opens a PR: I review it
+  and, if it's good, I merge it. Nothing changes until I approve.
+- **Fork** — a personal, independent copy of the project that anyone can modify freely on
+  their own.
 
-Se vuoi una funzione o un adattamento (altro servizio proxy, altro host, ecc.), apri pure
-una issue descrivendo cosa ti serve.
+If you want a feature or an adaptation (another proxy service, another host, etc.), feel
+free to open an issue describing what you need.
 
-## Avvertenze
+## Disclaimer
 
-Strumento fornito "così com'è", per uso personale e lecito. Scaricare contenuti protetti
-da copyright senza diritto può violare la legge; aggirare limiti o protezioni può violare
-i termini di servizio del sito e del tuo provider VPN/proxy. L'uso è responsabilità di chi
-lo utilizza.
+This tool is provided "as is", for personal and lawful use. Downloading copyrighted
+content without the right to do so may break the law; bypassing limits or protections may
+violate the terms of service of the site and of your VPN/proxy provider. Use is the
+responsibility of whoever runs it.

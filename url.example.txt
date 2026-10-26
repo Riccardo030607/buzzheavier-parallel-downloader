@@ -1,4 +1,5 @@
-# Copia questo file in "url.txt" e incolla sulla PRIMA riga il link di download.
-# Puo' essere l'endpoint iniziale (es. .../download?t=...) oppure il link diretto
-# al file. Il token nel link e' a scadenza: se scade, ricatturalo dal browser.
+# Copy this file to "url.txt" and paste the download link on the FIRST line.
+# It can be the initial endpoint (e.g. .../download?t=...) or the direct link to
+# the file. The token in the link is time-limited: if it expires, recapture it
+# from the browser.
 PASTE_DOWNLOAD_URL_HERE

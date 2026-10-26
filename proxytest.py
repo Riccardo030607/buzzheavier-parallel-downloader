@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Test: il download funziona da un IP DIVERSO (tramite un proxy)?
+Test: does the download work from a DIFFERENT IP (through a proxy)?
 
-Serve a decidere se la modalita' multi-connessione con rotazione di IP e' utile:
-se l'autorizzazione del file e' legata all'IP (cookie/token IP-bound), le richieste
-da un IP diverso daranno 403 e il multi-IP non e' fattibile.
+Use it to decide whether multi-connection mode with IP rotation is worthwhile:
+if the file authorization is bound to the IP (IP-bound cookie/token), requests
+from a different IP will return 403 and multi-IP is not feasible.
 
-USO:
-    python proxytest.py host:porta                 # proxy SOCKS5
-    python proxytest.py socks5h://host:porta
-    python proxytest.py http://host:porta
+USAGE:
+    python proxytest.py host:port                  # SOCKS5 proxy
+    python proxytest.py socks5h://host:port
+    python proxytest.py http://host:port
 
-Scarica i primi 20 MB attraverso il proxy e stampa un verdetto.
+Downloads the first 20 MB through the proxy and prints a verdict.
 """
 import sys
 import time
@@ -26,7 +26,7 @@ TEST_BYTES = 20 * 1024 * 1024  # 20 MB
 
 def main() -> int:
     if len(sys.argv) < 2:
-        print("USO: python proxytest.py <host:porta | scheme://host:porta>")
+        print("USAGE: python proxytest.py <host:port | scheme://host:port>")
         return 1
     proxy = sys.argv[1]
     proxy_url = proxy if "://" in proxy else "socks5h://" + proxy
@@ -35,16 +35,16 @@ def main() -> int:
 
     headers = d.read_headers()
 
-    # Risolvo il link tramite la connessione normale (senza proxy)
+    # Resolve the link over the normal connection (no proxy)
     try:
         landing = d.read_landing()
         real = d.resolve_direct_url(landing, headers, "chrome")
-        print(f"link risolto: {real[:80]}...")
+        print(f"resolved link: {real[:80]}...")
     except Exception as e:
-        print(f"[!] risoluzione fallita (link scaduto?): {e}")
+        print(f"[!] resolution failed (expired link?): {e}")
         return 1
 
-    # Scarico i primi 20 MB ATTRAVERSO il proxy (quindi da un IP diverso)
+    # Download the first 20 MB THROUGH the proxy (i.e. from a different IP)
     h = dict(headers)
     h["Accept-Encoding"] = "identity"
     h["Range"] = f"bytes=0-{TEST_BYTES - 1}"
@@ -54,9 +54,9 @@ def main() -> int:
         r = requests.get(real, headers=h, proxies=proxies, impersonate="chrome",
                          stream=True, timeout=60)
     except Exception as e:
-        print(f"[!] richiesta via proxy fallita: {e}")
+        print(f"[!] request via proxy failed: {e}")
         return 1
-    print(f"status: {r.status_code}  (206 o 200 = accettato)")
+    print(f"status: {r.status_code}  (206 or 200 = accepted)")
     for k in ("Content-Range", "Content-Length", "Content-Type"):
         if k in r.headers:
             print(f"  {k}: {r.headers[k]}")
@@ -67,13 +67,13 @@ def main() -> int:
             break
     r.close()
     dt = max(time.time() - t0, 1e-6)
-    print(f"scaricati {got/1e6:.1f} MB in {dt:.1f}s = {got/1e6/dt:.2f} MB/s su questa connessione")
+    print(f"downloaded {got/1e6:.1f} MB in {dt:.1f}s = {got/1e6/dt:.2f} MB/s on this connection")
 
     ok = r.status_code in (200, 206) and got > 1_000_000 and "text/html" not in ctype
-    print("\nVERDETTO:",
-          "FUNZIONA da IP diverso -> multi-IP fattibile"
+    print("\nVERDICT:",
+          "WORKS from a different IP -> multi-IP feasible"
           if ok else
-          "BLOCCATO (auth legata all'IP o HTML) -> multi-IP non fattibile")
+          "BLOCKED (IP-bound auth or HTML) -> multi-IP not feasible")
     return 0 if ok else 2
 
 

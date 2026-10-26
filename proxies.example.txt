@@ -1,15 +1,15 @@
-# Copia questo file in "proxies.txt" per usare la modalita' multi-connessione (-n).
-# Una riga = una connessione. Il numero di righe utili deve combaciare con -n.
+# Copy this file to "proxies.txt" to use multi-connection mode (-n).
+# One line = one connection. The number of usable lines should match -n.
 #
-#   direct            -> nessun proxy (rete/tunnel attuale)
-#   host:porta        -> proxy SOCKS5 (ogni riga = un IP di uscita diverso)
-#   scheme://host:porta -> URL completo (es. socks5h://host:1080, http://host:3128)
+#   direct              -> no proxy (current network/tunnel)
+#   host:port           -> SOCKS5 proxy (each line = a different exit IP)
+#   scheme://host:port  -> full URL (e.g. socks5h://host:1080, http://host:3128)
 #
-# Far uscire ogni connessione da un IP diverso puo' aggirare il throttling che
-# alcuni server applicano PER-IP. Verifica l'IP di uscita di un proxy con:
-#   curl https://api.ipify.org --socks5-hostname host:porta
+# Routing each connection through a different IP can bypass the throttling that
+# some servers apply PER-IP. Check a proxy's exit IP with:
+#   curl https://api.ipify.org --socks5-hostname host:port
 #
-# Esempio (sostituisci con i tuoi proxy):
+# Example (replace with your own proxies):
 direct
 # socks5h://proxy-a.example.net:1080
 # socks5h://proxy-b.example.net:1080
